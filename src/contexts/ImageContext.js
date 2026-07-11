@@ -8,64 +8,70 @@ const pixabay_api_key = "18846369-871c95044dd7c0f31f2b303e0";
 const unsplash_api_key = "UBAXKPq5WgOxU9z7XjLZrt8B0hayG2dv8gh_vyGQg-0";
 const pexels_api_key =
   "RfvKt0kQLXP7affcVkFgHWHcsRSD9CGKz91wOPBeLf7suLFEJJdjSWv3";
-let d = [];
+
 const ImageContextProvider = (props) => {
   const [image, setImages] = useState("");
 
   const fetchImages = async (setIsLoading, queries) => {
-    const pexels_response = [];
-
     setIsLoading(true);
-    console.log(queries);
-    let query = [...queries];
-    query = query.join("+");
-    // if the query contains "famous quotes" change it to nature.
-    if (query.includes("Famous Quotes")) {
-      query = "nature";
-    }
-
-    console.log(query);
-    // fetching images
-    const pixabay_response = await axios.get(
-      `https://pixabay.com/api/?key=${pixabay_api_key}&q=${query}&image_type=photo&pretty=true&per_page=200`
-    );
-
-    const numberOfPhotos = 30;
-
-    const unsplash_response = await axios.get(
-      `https://api.unsplash.com/search/photos/?query=${query}&client_id=${unsplash_api_key}&per_page=${numberOfPhotos}`
-    );
-    const client = createClient(pexels_api_key);
     try {
-      pexels_response = await client.photos.search({
-        query,
-        per_page: 80,
-      });
-    } catch (error) {}
-    const data3 = {
-      pixabay: pixabay_response.data.hits,
-      unsplash: unsplash_response.data.results,
-      pexels: pexels_response.photos,
-    };
-    console.log(data3);
+      // Build the search term from the quote's tags. Guard against the empty /
+      // undefined query that used to make Unsplash return HTTP 400.
+      const terms = [...queries].flat().filter(Boolean).map(String);
+      let query = terms.length ? terms.join(" ") : "nature";
+      if (query.includes("Famous Quotes")) {
+        query = "nature";
+      }
+      const q = encodeURIComponent(query);
+      const numberOfPhotos = 30;
 
-    let pix = pixabay_response.data.hits.map((image) => image.largeImageURL);
-    let uns = unsplash_response.data.results.map((image) => image.urls.regular);
-    let pex =
-      pexels_response.length > 1
-        ? pexels_response.photos.map((image) => image.src.large2x)
-        : [];
+      // Each provider is isolated so one failing API doesn't break the others.
+      let pix = [];
+      let uns = [];
+      let pex = [];
 
-    const data = [...pix, ...uns, ...pex];
-    d = data;
-    console.log(data.length);
+      try {
+        const pixabay_response = await axios.get(
+          `https://pixabay.com/api/?key=${pixabay_api_key}&q=${q}&image_type=photo&pretty=true&per_page=200`
+        );
+        pix = pixabay_response.data.hits.map((image) => image.largeImageURL);
+      } catch (error) {
+        console.warn("Pixabay failed:", error.message);
+      }
 
-    // select one image at random:
-    const randomImage = data[Math.floor(Math.random() * data.length)];
-    console.log(randomImage);
-    setImages(randomImage);
-    setIsLoading(false);
+      try {
+        const unsplash_response = await axios.get(
+          `https://api.unsplash.com/search/photos/?query=${q}&client_id=${unsplash_api_key}&per_page=${numberOfPhotos}`
+        );
+        uns = unsplash_response.data.results.map((image) => image.urls.regular);
+      } catch (error) {
+        console.warn("Unsplash failed:", error.message);
+      }
+
+      try {
+        const client = createClient(pexels_api_key);
+        const pexels_response = await client.photos.search({
+          query,
+          per_page: 80,
+        });
+        pex = (pexels_response.photos ?? []).map((image) => image.src.large2x);
+      } catch (error) {
+        console.warn("Pexels failed:", error.message);
+      }
+
+      const data = [...pix, ...uns, ...pex];
+      console.log(`Loaded ${data.length} images for "${query}"`);
+      if (data.length > 0) {
+        const randomImage = data[Math.floor(Math.random() * data.length)];
+        setImages(randomImage);
+      }
+    } catch (error) {
+      console.error("Image fetch failed:", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
+
   return (
     <div>
       <imageContext.Provider value={{ image, fetchImages }}>
